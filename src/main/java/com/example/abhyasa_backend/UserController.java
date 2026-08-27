@@ -1,10 +1,15 @@
 package com.example.abhyasa_backend;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -112,8 +117,8 @@ public class UserController {
 
             User user = userService.getUserByEmail(email);
 
-            // Check password
-            if (!user.getPassword().equals(password)) {
+            // Check password using BCrypt
+            if (!userService.checkPassword(password, user.getPassword())) {
                 return ResponseEntity
                         .status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("error", "Invalid email or password"));
@@ -165,6 +170,63 @@ public class UserController {
             return ResponseEntity
                     .status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // GOOGLE LOGIN
+    @PostMapping("/google-login")
+    public ResponseEntity<?> googleLogin(@RequestBody Map<String, String> request) {
+
+        try {
+            String credential = request.get("credential");
+
+            if (credential == null || credential.isEmpty()) {
+                return ResponseEntity
+                        .badRequest()
+                        .body(Map.of("error", "Google credential is required"));
+            }
+
+            // Verify the Google ID token
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
+                    new NetHttpTransport(), GsonFactory.getDefaultInstance())
+                    .setAudience(Collections.singletonList(
+                            "960010180575-mus1ie7mfq9hrqvb7cadrvvnqqsm0iso.apps.googleusercontent.com"))
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(credential);
+
+            if (idToken == null) {
+                return ResponseEntity
+                        .status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Invalid Google token"));
+            }
+
+            // Extract user info from Google token
+            GoogleIdToken.Payload payload = idToken.getPayload();
+            String email = payload.getEmail();
+            String firstName = (String) payload.get("given_name");
+            String lastName = (String) payload.get("family_name");
+
+            // Find or create user
+            User user = userService.findOrCreateGoogleUser(email, firstName, lastName);
+
+            // Return user data
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Google login successful");
+            response.put("id", user.getId());
+            response.put("firstName", user.getFirstName());
+            response.put("middleName", user.getMiddleName());
+            response.put("lastName", user.getLastName());
+            response.put("email", user.getEmail());
+            response.put("phoneNumber", user.getPhoneNumber());
+            response.put("dateOfBirth", user.getDateOfBirth());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Google authentication failed: " + e.getMessage()));
         }
     }
 }
