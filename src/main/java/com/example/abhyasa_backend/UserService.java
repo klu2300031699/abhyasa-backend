@@ -19,8 +19,20 @@ public class UserService {
     public User registerUser(User user) {
 
         // Check whether email already exists
-        if (userRepository.existsByEmail(user.getEmail())) {
-            throw new RuntimeException("Email already registered");
+        if (user.getEmail() != null && userRepository.existsByEmail(user.getEmail().trim().toLowerCase())) {
+            throw new RuntimeException("Email is already registered");
+        }
+
+        // Check whether phone number already exists
+        if (user.getPhoneNumber() != null && !user.getPhoneNumber().trim().isEmpty()) {
+            String phone = user.getPhoneNumber().trim();
+            if (userRepository.existsByPhoneNumber(phone)) {
+                throw new RuntimeException("Phone number is already registered");
+            }
+            // Also check with/without +91
+            if (!phone.startsWith("+91") && userRepository.existsByPhoneNumber("+91" + phone)) {
+                throw new RuntimeException("Phone number is already registered");
+            }
         }
 
         // Hash the password before saving
@@ -41,10 +53,48 @@ public class UserService {
 
     // Get user by email
     public User getUserByEmail(String email) {
-
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmail(email.trim().toLowerCase())
                 .orElseThrow(() ->
                         new RuntimeException("User not found with email: " + email));
+    }
+
+    // Get user by email OR phone number
+    public User getUserByIdentifier(String identifier) {
+        if (identifier == null || identifier.trim().isEmpty()) {
+            throw new RuntimeException("Email or phone number is required");
+        }
+
+        String cleaned = identifier.trim();
+
+        // 1. Try exact email match
+        Optional<User> user = userRepository.findByEmail(cleaned.toLowerCase());
+        if (user.isPresent()) {
+            return user.get();
+        }
+
+        // 2. Try phone number exact match
+        user = userRepository.findByPhoneNumber(cleaned);
+        if (user.isPresent()) {
+            return user.get();
+        }
+
+        // 3. If phone entered without +91, try with +91
+        if (!cleaned.startsWith("+91")) {
+            user = userRepository.findByPhoneNumber("+91" + cleaned);
+            if (user.isPresent()) {
+                return user.get();
+            }
+        }
+
+        // 4. If phone entered with +91, try without +91
+        if (cleaned.startsWith("+91")) {
+            user = userRepository.findByPhoneNumber(cleaned.substring(3));
+            if (user.isPresent()) {
+                return user.get();
+            }
+        }
+
+        throw new RuntimeException("User not found with details: " + identifier);
     }
 
     // Find or create Google user

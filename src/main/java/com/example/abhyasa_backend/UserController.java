@@ -35,14 +35,14 @@ public class UserController {
             if (password == null || confirmPassword == null) {
                 return ResponseEntity
                         .badRequest()
-                        .body("Password and Confirm Password are required");
+                        .body(Map.of("error", "Password and Confirm Password are required"));
             }
 
             // Check password match
             if (!password.equals(confirmPassword)) {
                 return ResponseEntity
                         .badRequest()
-                        .body("Passwords do not match");
+                        .body(Map.of("error", "Passwords do not match"));
             }
 
             // Create User object
@@ -76,7 +76,7 @@ public class UserController {
 
             return ResponseEntity
                     .badRequest()
-                    .body(e.getMessage());
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -101,27 +101,30 @@ public class UserController {
         }
     }
 
-    // LOGIN
+    // LOGIN (Supports Email or Mobile Number)
     @PostMapping("/login")
     public ResponseEntity<?> loginUser(@RequestBody Map<String, String> request) {
 
         try {
-            String email = request.get("email");
+            String identifier = request.get("email");
+            if (identifier == null || identifier.isEmpty()) {
+                identifier = request.get("identifier");
+            }
             String password = request.get("password");
 
-            if (email == null || password == null) {
+            if (identifier == null || identifier.trim().isEmpty() || password == null || password.isEmpty()) {
                 return ResponseEntity
                         .badRequest()
-                        .body(Map.of("error", "Email and password are required"));
+                        .body(Map.of("error", "Email/Mobile number and password are required"));
             }
 
-            User user = userService.getUserByEmail(email);
+            User user = userService.getUserByIdentifier(identifier);
 
             // Check password using BCrypt
             if (!userService.checkPassword(password, user.getPassword())) {
                 return ResponseEntity
                         .status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Invalid email or password"));
+                        .body(Map.of("error", "Invalid email/mobile number or password"));
             }
 
             // Success — return user info (no password)
@@ -138,10 +141,9 @@ public class UserController {
             return ResponseEntity.ok(response);
 
         } catch (RuntimeException e) {
-
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Invalid email or password"));
+                    .body(Map.of("error", "Invalid email/mobile number or password"));
         }
     }
 
