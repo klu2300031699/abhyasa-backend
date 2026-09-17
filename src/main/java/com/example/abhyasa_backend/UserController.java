@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/users")
@@ -21,6 +22,12 @@ public class UserController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private DoctorRepository doctorRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     // CREATE ACCOUNT
     @PostMapping("/register")
@@ -137,6 +144,13 @@ public class UserController {
             response.put("email", user.getEmail());
             response.put("phoneNumber", user.getPhoneNumber());
             response.put("dateOfBirth", user.getDateOfBirth());
+            response.put("role", user.getRole());
+
+            // If doctor, include doctorId
+            if ("DOCTOR".equals(user.getRole())) {
+                doctorRepository.findByUserId(user.getId())
+                        .ifPresent(d -> response.put("doctorId", d.getId()));
+            }
 
             return ResponseEntity.ok(response);
 
@@ -165,6 +179,7 @@ public class UserController {
             profile.put("email", user.getEmail());
             profile.put("phoneNumber", user.getPhoneNumber());
             profile.put("dateOfBirth", user.getDateOfBirth());
+            profile.put("role", user.getRole());
 
             return ResponseEntity.ok(profile);
 
@@ -222,6 +237,7 @@ public class UserController {
             response.put("email", user.getEmail());
             response.put("phoneNumber", user.getPhoneNumber());
             response.put("dateOfBirth", user.getDateOfBirth());
+            response.put("role", user.getRole());
 
             return ResponseEntity.ok(response);
 
@@ -229,6 +245,112 @@ public class UserController {
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Google authentication failed: " + e.getMessage()));
+        }
+    }
+
+    // ===== ADMIN ENDPOINTS =====
+
+    // GET ALL USERS (Admin)
+    @GetMapping("/admin/all")
+    public ResponseEntity<?> getAllUsersAdmin() {
+        List<User> users = userService.getAllUsers();
+        List<Map<String, Object>> response = new java.util.ArrayList<>();
+        for (User u : users) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", u.getId());
+            map.put("firstName", u.getFirstName());
+            map.put("middleName", u.getMiddleName());
+            map.put("lastName", u.getLastName());
+            map.put("email", u.getEmail());
+            map.put("phoneNumber", u.getPhoneNumber());
+            map.put("dateOfBirth", u.getDateOfBirth());
+            map.put("role", u.getRole());
+            map.put("createdAt", u.getCreatedAt());
+            response.add(map);
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    // PUT CHANGE USER ROLE (Admin)
+    @PutMapping("/{id}/role")
+    public ResponseEntity<?> changeUserRole(
+            @PathVariable Long id, @RequestBody Map<String, String> request) {
+        try {
+            String newRole = request.get("role");
+            if (newRole == null || (!newRole.equals("USER") && !newRole.equals("DOCTOR") && !newRole.equals("ADMIN"))) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Invalid role. Must be USER, DOCTOR, or ADMIN"));
+            }
+
+            User user = userRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            user.setRole(newRole);
+            userRepository.save(user);
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Role updated successfully",
+                    "id", user.getId(),
+                    "email", user.getEmail(),
+                    "role", newRole
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // PUT UPDATE USER DETAILS (Admin)
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateUser(
+            @PathVariable Long id, @RequestBody Map<String, String> request) {
+        try {
+            User user = userRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            if (request.containsKey("firstName")) user.setFirstName(request.get("firstName"));
+            if (request.containsKey("lastName")) user.setLastName(request.get("lastName"));
+            if (request.containsKey("phoneNumber")) user.setPhoneNumber(request.get("phoneNumber"));
+            if (request.containsKey("middleName")) user.setMiddleName(request.get("middleName"));
+            if (request.containsKey("email")) {
+                String newEmail = request.get("email");
+                // Check if email already used by another user
+                Optional<User> existing = userRepository.findByEmail(newEmail);
+                if (existing.isPresent() && !existing.get().getId().equals(id)) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT)
+                            .body(Map.of("error", "Email already in use by another account"));
+                }
+                user.setEmail(newEmail);
+            }
+
+            userRepository.save(user);
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", user.getId());
+            map.put("firstName", user.getFirstName());
+            map.put("lastName", user.getLastName());
+            map.put("email", user.getEmail());
+            map.put("phoneNumber", user.getPhoneNumber());
+            map.put("role", user.getRole());
+            map.put("message", "User updated successfully");
+            return ResponseEntity.ok(map);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // DELETE USER (Admin)
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteUser(@PathVariable Long id) {
+        try {
+            if (!userRepository.existsById(id)) {
+                throw new RuntimeException("User not found");
+            }
+            userRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of("message", "User deleted successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 }

@@ -116,4 +116,37 @@ public class UserService {
 
         return userRepository.save(newUser);
     }
+
+    // Create or promote a Doctor user account (Admin action when adding a doctor)
+    public User createOrUpdateDoctorUser(String email, String fullName, String phone, String password) {
+        if (email == null || email.trim().isEmpty()) {
+            return null;
+        }
+
+        String cleanedEmail = email.trim().toLowerCase();
+        Optional<User> existing = userRepository.findByEmail(cleanedEmail);
+
+        if (existing.isPresent()) {
+            User u = existing.get();
+            u.setRole("DOCTOR");
+            if (password != null && !password.trim().isEmpty()) {
+                u.setPassword(passwordEncoder.encode(password));
+            }
+            return userRepository.save(u);
+        }
+
+        User newUser = new User();
+        newUser.setEmail(cleanedEmail);
+
+        String[] parts = fullName != null ? fullName.trim().split(" ", 2) : new String[]{"Doctor", ""};
+        newUser.setFirstName(parts[0]);
+        newUser.setLastName(parts.length > 1 ? parts[1] : "");
+        newUser.setPhoneNumber(phone);
+        newUser.setRole("DOCTOR");
+
+        String passToUse = (password != null && !password.trim().isEmpty()) ? password : "Doctor@123";
+        newUser.setPassword(passwordEncoder.encode(passToUse));
+
+        return userRepository.save(newUser);
+    }
 }
